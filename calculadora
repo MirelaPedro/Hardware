@@ -1,0 +1,210 @@
+
+.data
+	titulo: .asciiz " CALCULADORA MIPS FPU (MMIO)\n"
+	separador1: .asciiz "\n====================================\n"
+	separador2: .asciiz "\n------------------------------------\n"
+	num1: .asciiz "\nDigite o 1º Numero no display "
+	operacao: .asciiz "\nDigite a operacao que deseja realizar (+, -, *, /) "
+	num2: .asciiz "\nDigite o 2º Numero no display "
+	resultado: .asciiz "\nResultado: "
+	continuarMsg: .asciiz "\nDigite '0' no display se deseja sair "
+	sinalSoma: .ascii "+"
+	sinalSub: .ascii "-"
+	sinalMulti: .ascii "*"
+	sinalDivisao: .ascii "/"
+	erroMsgDiv: .asciiz "\nNão é possível dividir por zero (0)"
+	reutilizarMsg: .asciiz "\\nNão deseja reutilizar o valor da conta anterior? \n(digite 'c' para limpar) "
+
+.text
+.globl main
+
+	move $s0, $zero
+
+main: 
+	la $a0, separador1
+	jal imprime_string
+	la $a0, titulo
+	jal imprime_string
+	la $a0, separador1
+	jal imprime_string
+	
+# primeiro valor
+
+	la $a0, reutilizarMsg
+	jal imprime_string
+	jal ler_caracter
+	move $t2, $v0
+	
+	bne $t2, 'c', segundoValor
+		
+	la $a0, num1
+	jal imprime_string
+	
+	jal ler_teclado
+	move $s0, $v0
+
+# segundo valor
+segundoValor:
+	la $a0, num2
+	jal imprime_string
+	
+	jal ler_teclado
+	move $s1, $v0
+	
+	la $a0, operacao
+	jal imprime_string
+
+	jal ler_caracter
+	move $t2, $v0
+	
+	lb $t4, sinalSoma	
+	beq $t2, $t4, soma
+	
+	lb $t4, sinalSub
+	beq $t2, $t4, subtracao
+	
+	lb $t4, sinalMulti
+	beq $t2, $t4, multiplicacao
+	
+	lb $t4, sinalDivisao
+	beq $t2, $t4, divisao
+	
+	j continuar
+soma: 
+	add $s2, $s0, $s1
+	j exibir
+
+subtracao: 
+	sub $s2, $s0, $s1
+	j exibir
+
+multiplicacao:
+	mul $s2, $s0, $s1
+	j exibir
+
+divisao:
+	bne $s1, $zero, calcDiv
+	la $a0, erroMsgDiv
+	jal imprime_string
+	j continuar
+calcDiv:
+	div $s2, $s0, $s1
+	j exibir
+
+exibir: 
+	move $s0, $s2
+	la $a0, separador2
+	jal imprime_string
+	
+	la $a0, resultado
+	jal imprime_string
+	
+# mostrando na tela
+	li $t4, 0               # Contador de dígitos empilhados
+	li $t3, 10
+	
+extract_digits:
+    	div $s2, $t3            # Divide $s2 por 10
+	mflo $s2                # Quociente volta para $s2
+    	mfhi $t2                # Resto (último dígito) vai para $t2
+
+    	addi $t2, $t2, 48       # Converte dígito de volta para ASCII (+48)
+    	subi $sp, $sp, 4        # Reserva espaço na pilha
+    	sw $t2, 0($sp)          # Empilha o caractere ASCII
+    	addi $t4, $t4, 1        # Incrementa contador de dígitos
+
+    	bne $s2, $zero, extract_digits # Repete enquanto quociente != 0
+
+print_loop:
+    	beq $t4, $zero, continuar    # Se imprimiu todos os dígitos, encerra
+
+    	lw $t2, 0($sp)          # Desempilha o caractere ASCII
+    	addi $sp, $sp, 4        # Libera espaço na pilha
+    	subi $t4, $t4, 1        # Decrementa contador
+
+    	lui $t0, 0xffff         # Base MMIO
+
+wait_display:
+    	lw $t1, 8($t0)          # Lê Transmitter Control (0xffff0008)
+    	andi $t1, $t1, 1        # Isola o bit 0 (Ready bit)
+    	beq $t1, $zero, wait_display # Aguarda display ficar pronto
+
+    	sw $t2, 12($t0)         # Escreve caractere em Transmitter Data (0xffff000c)
+    	j print_loop
+	
+# cpntinuação ou encerramento do programa
+continuar:
+	la $a0, continuarMsg
+	jal imprime_string
+	
+	jal ler_caracter
+	move $t0, $v0
+	
+	bne $t0, 48, main
+	
+	li $v0, 10
+	syscall
+	
+
+## funcao de leitura do teclado
+ler_teclado:
+	li $t3, 10
+	move $v0, $zero
+leitura:
+	lui $t0, 0xffff
+espera:
+	lw $t1, 0($t0)
+	andi $t1, $t1, 1
+	beq $t1, $zero, espera
+	
+	lw $t2, 4($t0)
+	
+	beq $t2, 10, fim_pooling
+	
+	subi $t2, $t2, 48
+	
+	mul $v0, $v0, $t3
+	add $v0, $v0, $t2
+	j leitura
+	
+fim_pooling:
+	jr $ra
+	
+			
+# funcao para  imprimir uma string			
+imprime_string:
+	# $a0 = endereço da string
+	lui $t0, 0xffff            # base do MMIO
+
+prox_char:
+	lb $t2, 0($a0)             # pega 1 caractere (1 byte)
+	beq $t2, $zero, fim_string # se for 0, acabou
+
+espera_disp:
+	lw $t1, 8($t0)             # status do display
+	andi $t1, $t1, 1           # isola o bit "pronto"
+	beq $t1, $zero, espera_disp
+
+	sw $t2, 12($t0)            # manda o caractere para o display
+	addi $a0, $a0, 1           # próximo caractere (+1 byte)
+	j prox_char
+
+fim_string:
+	jr $ra					
+	
+	
+#funcao para ler um caracter
+ler_caracter:
+	lui $t0, 0xffff
+esperaSinal:
+	lw $t1, 0($t0)
+	andi $t1, $t1, 1
+	beq $t1, $zero, esperaSinal
+	lw $t2, 4($t0)
+	beq $t2, 10, fim_leitura
+	move $t3, $t2
+	j esperaSinal
+	
+fim_leitura:
+	move $v0, $t3
+	jr $ra
