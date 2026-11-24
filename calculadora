@@ -1,32 +1,34 @@
 
 .data
-	titulo: .asciiz " CALCULADORA MIPS FPU (MMIO)\n"
-	separador1: .asciiz "\n====================================\n"
-	separador2: .asciiz "\n------------------------------------\n"
-	num1: .asciiz "\nDigite o 1� Numero no display "
-	operacao: .asciiz "\nDigite a operacao que deseja realizar (+, -, *, /) "
-	num2: .asciiz "\nDigite o 2� Numero no display "
-	resultado: .asciiz "\nResultado: "
-	continuarMsg: .asciiz "\nDigite '0' no display se deseja sair "
-	sinalSoma: .ascii "+"
-	sinalSub: .ascii "-"
-	sinalMulti: .ascii "*"
-	sinalDivisao: .ascii "/"
-	erroMsgDiv: .asciiz "\nN�o � poss�vel dividir por zero (0)"
-	reutilizarMsg: .asciiz "\\nN�o deseja reutilizar o valor da conta anterior? \n(digite 'c' para limpar) "
+	titulo: 	.asciiz " CALCULADORA MIPS FPU (MMIO)\n"
+	separador1: 	.asciiz "\n====================================\n"
+	separador2: 	.asciiz "\n------------------------------------\n"
+	num1: 		.asciiz "\nDigite o 1º Numero no display "
+	operacao: 	.asciiz "\nDigite a operacao que deseja realizar (+, -, *, /) "
+	num2: 		.asciiz "\nDigite o 2º Numero no display "
+	resultado: 	.asciiz "\nResultado: "
+	continuarMsg: 	.asciiz "\nDigite '0' no display se deseja sair "
+	sinalSoma: 	.ascii "+"
+	sinalSub: 	.ascii "-"
+	sinalMulti: 	.ascii "*"
+	sinalDivisao: 	.ascii "/"
+	erroMsgDiv: 	.asciiz "\nNão é possível dividir por zero (0)"
+	reutilizarMsg: 	.asciiz "\\nNão deseja reutilizar o valor da conta anterior? \n(digite 'c' para limpar) "
+	arredonda:  	.float 0.0000005       # meio "último dígito" para arredondar
+	dez:        	.float 10.0
 
 .text
 .globl main
 
-	move $s0, $zero
+	#move $f20, $zero
 
 main: 
-	la $a0, separador1
-	jal imprime_string
-	la $a0, titulo
-	jal imprime_string
-	la $a0, separador1
-	jal imprime_string
+	#la $a0, separador1
+	#jal imprime_string
+	#la $a0, titulo
+	#jal imprime_string
+	#la $a0, separador1
+	#jal imprime_string
 	
 # primeiro valor
 
@@ -41,7 +43,7 @@ main:
 	jal imprime_string
 	
 	jal ler_teclado
-	move $s0, $v0
+	mov.s $f20, $f0
 
 # segundo valor
 segundoValor:
@@ -49,7 +51,7 @@ segundoValor:
 	jal imprime_string
 	
 	jal ler_teclado
-	move $s1, $v0
+	mov.s $f22, $f0
 	
 	la $a0, operacao
 	jal imprime_string
@@ -71,68 +73,41 @@ segundoValor:
 	
 	j continuar
 soma: 
-	add $s2, $s0, $s1
+	add.s $f12, $f20, $f22
 	j exibir
 
 subtracao: 
-	sub $s2, $s0, $s1
+	sub.s $f12, $f20, $f22
 	j exibir
 
 multiplicacao:
-	mul $s2, $s0, $s1
+	mul.s $f12, $f20, $f22
 	j exibir
 
 divisao:
-	bne $s1, $zero, calcDiv
+	mtc1  $zero, $f22           # $f2 = 0.0 (os bits 0x00000000 são +0.0 em IEEE 754)
+        c.eq.s $f0, $f22            # flag = (f0 == 0.0)
+        bc1f  calcDiv
 	la $a0, erroMsgDiv
 	jal imprime_string
 	j continuar
 calcDiv:
-	div $s2, $s0, $s1
+	div.s $f12, $f20, $f22
 	j exibir
 
 exibir: 
-	move $s0, $s2
-	la $a0, separador2
-	jal imprime_string
+	#mov.s $f1, $f12
+	#la $a0, separador2
+	#jal imprime_string
 	
 	la $a0, resultado
 	jal imprime_string
+	mov.s $f20, $f12
 	
 # mostrando na tela
-	li $t4, 0               # Contador de d�gitos empilhados
-	li $t3, 10
+	jal imprimir_float
 	
-extract_digits:
-    	div $s2, $t3            # Divide $s2 por 10
-	mflo $s2                # Quociente volta para $s2
-    	mfhi $t2                # Resto (�ltimo d�gito) vai para $t2
-
-    	addi $t2, $t2, 48       # Converte d�gito de volta para ASCII (+48)
-    	subi $sp, $sp, 4        # Reserva espa�o na pilha
-    	sw $t2, 0($sp)          # Empilha o caractere ASCII
-    	addi $t4, $t4, 1        # Incrementa contador de d�gitos
-
-    	bne $s2, $zero, extract_digits # Repete enquanto quociente != 0
-
-print_loop:
-    	beq $t4, $zero, continuar    # Se imprimiu todos os d�gitos, encerra
-
-    	lw $t2, 0($sp)          # Desempilha o caractere ASCII
-    	addi $sp, $sp, 4        # Libera espa�o na pilha
-    	subi $t4, $t4, 1        # Decrementa contador
-
-    	lui $t0, 0xffff         # Base MMIO
-
-wait_display:
-    	lw $t1, 8($t0)          # L� Transmitter Control (0xffff0008)
-    	andi $t1, $t1, 1        # Isola o bit 0 (Ready bit)
-    	beq $t1, $zero, wait_display # Aguarda display ficar pronto
-
-    	sw $t2, 12($t0)         # Escreve caractere em Transmitter Data (0xffff000c)
-    	j print_loop
-	
-# cpntinua��o ou encerramento do programa
+# cpntinuação ou encerramento do programa
 continuar:
 	la $a0, continuarMsg
 	jal imprime_string
@@ -146,34 +121,172 @@ continuar:
 	syscall
 	
 
+## ------------------------------ FUNCAO PARA LER UM NUMERO FLOAT ----------------------------
 ## funcao de leitura do teclado
 ler_teclado:
-	li $t3, 10
-	move $v0, $zero
-leitura:
-	lui $t0, 0xffff
+        lui   $t0, 0xffff          # base MMIO
+        li    $t3, 10              # base decimal
+        move    $v0, $zero               # parte inteira
+        move    $t6, $zero               # parte fracionária (como inteiro)
+        li    $t7, 1               # divisor: 1, 10, 100, ...
+        move    $t4, $zero               # sinal (1 = negativo)
+        move    $t8, $zero               # já viu '.'?
+        move    $t9, $zero               # já leu algum caractere?
+
 espera:
-	lw $t1, 0($t0)
-	andi $t1, $t1, 1
-	beq $t1, $zero, espera
-	
-	lw $t2, 4($t0)
-	
-	beq $t2, 10, fim_pooling
-	
-	subi $t2, $t2, 48
-	
-	mul $v0, $v0, $t3
-	add $v0, $v0, $t2
-	j leitura
-	
-fim_pooling:
-	jr $ra
-	
-			
+        lw    $t1, 0($t0)          # Receiver Control
+        andi  $t1, $t1, 1
+        beq   $t1, $zero, espera
+
+        lw    $t2, 4($t0)          # Receiver Data (ASCII)
+
+        beq   $t2, 10, fim         # Enter
+        beq   $t2, 45, trata_sinal # '-'
+        beq   $t2, 46, trata_ponto # '.'
+        blt   $t2, 48, espera      # ignora não-dígitos
+        bgt   $t2, 57, espera
+
+        addi  $t5, $t2, -48        # valor do dígito
+        bnez  $t8, frac            # depois do '.'?
+
+        mul   $v0, $v0, $t3        # parte inteira: v0 = v0*10 + d
+        add   $v0, $v0, $t5
+        j     marca
+
+frac:
+        mul   $t6, $t6, $t3        # fração: t6 = t6*10 + d
+        add   $t6, $t6, $t5
+        mul   $t7, $t7, $t3        # divisor *= 10
+        j     marca
+
+trata_sinal:
+        bnez  $t9, espera          # '-' só é válido como 1º caractere
+        li    $t4, 1
+        j     marca
+
+trata_ponto:
+        bnez  $t8, espera          # ignora segundo '.'
+        li    $t8, 1
+
+marca:
+        li    $t9, 1               # já leu algo
+
+eco:                               # mostra o caractere no display
+        lw    $t1, 8($t0)          # Transmitter Control
+        andi  $t1, $t1, 1
+        beq   $t1, $zero, eco
+        sw    $t2, 12($t0)         # Transmitter Data
+        j     espera
+
+fim:
+        mtc1  $v0, $f0             # parte inteira -> float
+        cvt.s.w $f0, $f0
+        mtc1  $t6, $f2             # numerador da fração -> float
+        cvt.s.w $f2, $f2
+        mtc1  $t7, $f4             # divisor -> float
+        cvt.s.w $f4, $f4
+        div.s $f2, $f2, $f4        # fração = t6 / t7
+        add.s $f0, $f0, $f2        # inteiro + fração
+
+        beqz  $t4, ret
+        neg.s $f0, $f0             # aplica o sinal
+ret:
+        jr    $ra
+		
+## -------------------------------------------------------------------------------------------	
+## --------------------------------- FUNCAO PARA MOSTRAR UM FLOAT ----------------------------
+imprimir_float:
+        addi  $sp, $sp, -4
+        sw    $ra, 0($sp)
+
+        # 1) sinal: testa o bit 31 do padrão IEEE 754
+        mfc1  $t5, $f12
+        bgez  $t5, positivo
+        li    $a0, 45              # '-'
+        jal   escreve_char
+        abs.s $f12, $f12           # trabalha com o módulo
+positivo:
+
+        # 2) arredondamento na 6ª casa decimal
+        la    $t0, arredonda
+        lwc1  $f2, 0($t0)
+        add.s $f12, $f12, $f2
+
+        # 3) separa parte inteira e fração
+        trunc.w.s $f4, $f12        # parte inteira (bits de inteiro em $f4)
+        mfc1  $a0, $f4             # passa para $a0
+        cvt.s.w $f6, $f4           # parte inteira de volta como float
+        sub.s $f8, $f12, $f6       # fração = valor - inteira  (0 <= f < 1)
+
+        # 4) imprime parte inteira e o ponto
+        jal   imprimir_uint
+        li    $a0, 46              # '.'
+        jal   escreve_char
+
+        # 5) dígitos da fração
+        la    $t0, dez
+        lwc1  $f10, 0($t0)
+        li    $t6, 6               # número de casas decimais
+frac_loop:
+        mul.s $f8, $f8, $f10       # fração *= 10
+        trunc.w.s $f4, $f8         # dígito (0..9)
+        mfc1  $t2, $f4
+        cvt.s.w $f6, $f4
+        sub.s $f8, $f8, $f6        # remove o dígito, sobra a fração
+        addi  $a0, $t2, 48         # ASCII
+        jal   escreve_char
+        addi  $t6, $t6, -1
+        bnez  $t6, frac_loop
+
+        # 6) newline e retorno
+        li    $a0, 10
+        jal   escreve_char
+        lw    $ra, 0($sp)
+        addi  $sp, $sp, 4
+        jr    $ra
+
+
+# void imprimir_uint($a0 = inteiro >= 0)   (o seu código, como sub-rotina)
+imprimir_uint:
+        addi  $sp, $sp, -4
+        sw    $ra, 0($sp)          # salva $ra (vamos usar jal)
+        li    $t3, 10
+        li    $t4, 0
+        move  $t5, $a0
+ext:
+        div   $t5, $t3
+        mflo  $t5                  # quociente
+        mfhi  $t2                  # resto
+        addi  $t2, $t2, 48
+        addi  $sp, $sp, -4
+        sw    $t2, 0($sp)          # empilha
+        addi  $t4, $t4, 1
+        bnez  $t5, ext
+imp:
+        lw    $a0, 0($sp)          # desempilha
+        addi  $sp, $sp, 4
+        jal   escreve_char
+        addi  $t4, $t4, -1
+        bnez  $t4, imp
+        lw    $ra, 0($sp)
+        addi  $sp, $sp, 4
+        jr    $ra
+
+
+# void escreve_char($a0 = caractere)   usa $t0, $t1
+escreve_char:
+        lui   $t0, 0xffff
+espera_tx:
+        lw    $t1, 8($t0)          # Transmitter Control
+        andi  $t1, $t1, 1
+        beq   $t1, $zero, espera_tx
+        sw    $a0, 12($t0)         # Transmitter Data
+        jr    $ra
+        
+#------------------------------------------------------------------------       
 # funcao para  imprimir uma string			
 imprime_string:
-	# $a0 = endere�o da string
+	# $a0 = endereço da string
 	lui $t0, 0xffff            # base do MMIO
 
 prox_char:
@@ -186,7 +299,7 @@ espera_disp:
 	beq $t1, $zero, espera_disp
 
 	sw $t2, 12($t0)            # manda o caractere para o display
-	addi $a0, $a0, 1           # pr�ximo caractere (+1 byte)
+	addi $a0, $a0, 1           # próximo caractere (+1 byte)
 	j prox_char
 
 fim_string:
